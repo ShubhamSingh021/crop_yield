@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from catboost import CatBoostRegressor
+
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -17,22 +18,49 @@ import os
 # ENVIRONMENT
 # =========================================================
 
+# Project root:
+# smart-crop-ai/
+# ├── .env
+# ├── backend/
+# │   └── main.py
+# └── frontend/
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load root .env
 load_dotenv(BASE_DIR / ".env")
 
+
+# OpenWeather API key
 OPENWEATHER_API_KEY = os.getenv(
     "OPENWEATHER_API_KEY"
 )
 
+
+# Frontend URL
+#
+# Local development:
+# http://localhost:5173
+#
+# Production:
+# https://your-app.vercel.app
+#
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:5173"
+)
+
+
+# Make sure OpenWeather key exists
 if not OPENWEATHER_API_KEY:
+
     raise RuntimeError(
         "OPENWEATHER_API_KEY is not configured."
     )
 
 
 # =========================================================
-# FASTAPI
+# FASTAPI APPLICATION
 # =========================================================
 
 app = FastAPI(
@@ -49,12 +77,18 @@ app.add_middleware(
     CORSMiddleware,
 
     allow_origins=[
+        # Local Vite development
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:5175",
+
+        # Localhost IP
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         "http://127.0.0.1:5175",
+
+        # Production frontend
+        FRONTEND_URL,
     ],
 
     allow_credentials=True,
@@ -66,7 +100,7 @@ app.add_middleware(
 
 
 # =========================================================
-# MODEL
+# LOAD CATBOOST MODEL
 # =========================================================
 
 MODEL_PATH = os.path.join(
@@ -76,6 +110,7 @@ MODEL_PATH = os.path.join(
 )
 
 
+# Check model
 if not os.path.exists(MODEL_PATH):
 
     raise RuntimeError(
@@ -83,6 +118,7 @@ if not os.path.exists(MODEL_PATH):
     )
 
 
+# Load model
 model = CatBoostRegressor()
 
 model.load_model(
@@ -95,7 +131,7 @@ print(
 
 
 # =========================================================
-# CLIMATE LOOKUP
+# LOAD CLIMATE LOOKUP
 # =========================================================
 
 CLIMATE_PATH = os.path.join(
@@ -105,6 +141,7 @@ CLIMATE_PATH = os.path.join(
 )
 
 
+# Check climate file
 if not os.path.exists(CLIMATE_PATH):
 
     raise RuntimeError(
@@ -112,11 +149,13 @@ if not os.path.exists(CLIMATE_PATH):
     )
 
 
+# Load climate lookup
 climate_lookup = pd.read_csv(
     CLIMATE_PATH
 )
 
 
+# Required columns
 required_climate_columns = [
     "State",
     "District",
@@ -125,6 +164,7 @@ required_climate_columns = [
 ]
 
 
+# Check columns
 missing_columns = [
     column
     for column in required_climate_columns
@@ -193,18 +233,23 @@ def get_climate_data(
     district: str
 ):
 
+    # Clean state
     state_clean = (
         state
         .strip()
         .upper()
     )
 
+
+    # Clean district
     district_clean = (
         district
         .strip()
         .upper()
     )
 
+
+    # Search lookup
     result = climate_lookup[
         (
             climate_lookup["State"]
@@ -223,6 +268,8 @@ def get_climate_data(
         )
     ]
 
+
+    # No climate data
     if result.empty:
 
         raise ValueError(
@@ -230,9 +277,13 @@ def get_climate_data(
             f"{district}, {state}"
         )
 
+
+    # First matching row
     row = result.iloc[0]
 
+
     return {
+
         "rainfall": float(
             row["Rainfall"]
         ),
@@ -240,6 +291,7 @@ def get_climate_data(
         "temperature": float(
             row["Temperature"]
         )
+
     }
 
 
@@ -257,17 +309,27 @@ def get_coordinates(
         "geo/1.0/direct"
     )
 
+
     params = {
-        "q": f"{district},{state},IN",
-        "limit": 5,
-        "appid": OPENWEATHER_API_KEY
+
+        "q":
+            f"{district},{state},IN",
+
+        "limit":
+            5,
+
+        "appid":
+            OPENWEATHER_API_KEY
+
     }
+
 
     response = requests.get(
         url,
         params=params,
         timeout=10
     )
+
 
     if response.status_code != 200:
 
@@ -276,7 +338,9 @@ def get_coordinates(
             f"{response.status_code}"
         )
 
+
     locations = response.json()
+
 
     if not locations:
 
@@ -285,15 +349,17 @@ def get_coordinates(
             f"{district}, {state}"
         )
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # Prefer Indian result
-    # -----------------------------------------------------
+    # =====================================================
 
     for location in locations:
 
         if location.get("country") == "IN":
 
             return {
+
                 "latitude": float(
                     location["lat"]
                 ),
@@ -308,15 +374,19 @@ def get_coordinates(
                     "name",
                     district
                 )
+
             }
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # Fallback
-    # -----------------------------------------------------
+    # =====================================================
 
     location = locations[0]
 
+
     return {
+
         "latitude": float(
             location["lat"]
         ),
@@ -334,6 +404,7 @@ def get_coordinates(
             "name",
             district
         )
+
     }
 
 
@@ -351,18 +422,30 @@ def get_current_weather(
         "data/2.5/weather"
     )
 
+
     params = {
-        "lat": latitude,
-        "lon": longitude,
-        "appid": OPENWEATHER_API_KEY,
-        "units": "metric"
+
+        "lat":
+            latitude,
+
+        "lon":
+            longitude,
+
+        "appid":
+            OPENWEATHER_API_KEY,
+
+        "units":
+            "metric"
+
     }
+
 
     response = requests.get(
         url,
         params=params,
         timeout=10
     )
+
 
     if response.status_code != 200:
 
@@ -371,7 +454,13 @@ def get_current_weather(
             f"{response.status_code}"
         )
 
+
     weather = response.json()
+
+
+    # =====================================================
+    # Temperature
+    # =====================================================
 
     temperature = (
         weather
@@ -379,17 +468,28 @@ def get_current_weather(
         .get("temp")
     )
 
+
     if temperature is None:
 
         raise ValueError(
             "Temperature unavailable from OpenWeather."
         )
 
+
+    # =====================================================
+    # Rainfall
+    # =====================================================
+
     rainfall = (
         weather
         .get("rain", {})
         .get("1h", 0.0)
     )
+
+
+    # =====================================================
+    # Description
+    # =====================================================
 
     description = ""
 
@@ -398,6 +498,7 @@ def get_current_weather(
         []
     )
 
+
     if weather_list:
 
         description = weather_list[0].get(
@@ -405,7 +506,9 @@ def get_current_weather(
             ""
         )
 
+
     return {
+
         "temperature": float(
             temperature
         ),
@@ -414,7 +517,9 @@ def get_current_weather(
             rainfall
         ),
 
-        "description": description
+        "description":
+            description
+
     }
 
 
@@ -427,9 +532,9 @@ def get_options():
 
     try:
 
-        # -------------------------------------------------
+        # =================================================
         # STATES
-        # -------------------------------------------------
+        # =================================================
 
         states = sorted(
             climate_lookup["State"]
@@ -440,11 +545,12 @@ def get_options():
         )
 
 
-        # -------------------------------------------------
+        # =================================================
         # DISTRICTS BY STATE
-        # -------------------------------------------------
+        # =================================================
 
         districts = {}
+
 
         for state in states:
 
@@ -455,6 +561,7 @@ def get_options():
                 == state.upper()
             ]
 
+
             districts[state] = sorted(
                 state_data["District"]
                 .dropna()
@@ -464,11 +571,12 @@ def get_options():
             )
 
 
-        # -------------------------------------------------
+        # =================================================
         # CROPS
-        # -------------------------------------------------
+        # =================================================
 
         crops = sorted([
+
             "Arecanut",
             "Arhar/Tur",
             "Bajra",
@@ -522,29 +630,43 @@ def get_options():
             "Urad",
             "Wheat",
             "other misc. pulses"
+
         ])
 
 
-        # -------------------------------------------------
+        # =================================================
         # SEASONS
-        # -------------------------------------------------
+        # =================================================
 
         seasons = [
+
             "Autumn",
             "Kharif",
             "Rabi",
             "Summer",
             "Whole Year",
             "Winter"
+
         ]
 
 
         return {
-            "success": True,
-            "states": states,
-            "districts": districts,
-            "crops": crops,
-            "seasons": seasons
+
+            "success":
+                True,
+
+            "states":
+                states,
+
+            "districts":
+                districts,
+
+            "crops":
+                crops,
+
+            "seasons":
+                seasons
+
         }
 
 
@@ -567,23 +689,24 @@ def predict(
 
     try:
 
-        # -------------------------------------------------
+        # =================================================
         # 1. HISTORICAL CLIMATE
-        # -------------------------------------------------
+        # =================================================
 
         climate = get_climate_data(
             data.State,
             data.District
         )
 
+
         rainfall = climate["rainfall"]
 
         temperature = climate["temperature"]
 
 
-        # -------------------------------------------------
+        # =================================================
         # 2. LOCATION
-        # -------------------------------------------------
+        # =================================================
 
         location = get_coordinates(
             data.District,
@@ -591,9 +714,9 @@ def predict(
         )
 
 
-        # -------------------------------------------------
+        # =================================================
         # 3. CURRENT WEATHER
-        # -------------------------------------------------
+        # =================================================
 
         current_weather = get_current_weather(
             location["latitude"],
@@ -601,126 +724,164 @@ def predict(
         )
 
 
-        # -------------------------------------------------
+        # =================================================
         # 4. MODEL INPUT
-        # -------------------------------------------------
+        # =================================================
 
         input_data = pd.DataFrame([
             {
-                "Crop": data.Crop,
-                "State": data.State,
-                "District": data.District,
-                "Season": data.Season,
-                "Crop_Year": data.Crop_Year,
-                "Area": data.Area,
-                "Rainfall": rainfall,
-                "Temperature": temperature
+
+                "Crop":
+                    data.Crop,
+
+                "State":
+                    data.State,
+
+                "District":
+                    data.District,
+
+                "Season":
+                    data.Season,
+
+                "Crop_Year":
+                    data.Crop_Year,
+
+                "Area":
+                    data.Area,
+
+                "Rainfall":
+                    rainfall,
+
+                "Temperature":
+                    temperature
+
             }
         ])
 
 
-        # -------------------------------------------------
+        # =================================================
         # 5. PREDICT LOG YIELD
-        # -------------------------------------------------
+        # =================================================
 
         prediction_log = model.predict(
             input_data
         )[0]
 
 
-        # -------------------------------------------------
-        # 6. CONVERT BACK TO YIELD
-        # -------------------------------------------------
+        # =================================================
+        # 6. CONVERT BACK TO ACTUAL YIELD
+        # =================================================
 
         prediction = np.expm1(
             prediction_log
         )
 
+
+        # Prevent negative prediction
         prediction = max(
             0,
             prediction
         )
 
 
-        # -------------------------------------------------
+        # =================================================
         # 7. RESPONSE
-        # -------------------------------------------------
+        # =================================================
 
         return {
 
-            "success": True,
+            "success":
+                True,
 
 
-            # =============================================
+            # =================================================
             # PREDICTION
-            # =============================================
+            # =================================================
 
-            "predicted_yield": round(
-                float(prediction),
-                2
-            ),
+            "predicted_yield":
+                round(
+                    float(prediction),
+                    2
+                ),
 
-            "unit": "dataset yield units",
+            "unit":
+                "dataset yield units",
 
 
-            # =============================================
+            # =================================================
             # USER INPUT INFORMATION
-            # =============================================
+            # =================================================
 
-            "crop": data.Crop,
+            "crop":
+                data.Crop,
 
-            "season": data.Season,
+            "season":
+                data.Season,
 
-            "area": round(
-                float(data.Area),
-                2
-            ),
+            "area":
+                round(
+                    float(data.Area),
+                    2
+                ),
 
-            "prediction_year": data.Crop_Year,
+            "prediction_year":
+                data.Crop_Year,
 
 
-            # =============================================
+            # =================================================
             # CLIMATE USED BY MODEL
-            # =============================================
+            # =================================================
 
             "climate_used_for_prediction": {
 
-                "rainfall_mm": round(
-                    rainfall,
-                    2
-                ),
+                "rainfall_mm":
+                    round(
+                        rainfall,
+                        2
+                    ),
 
-                "temperature_c": round(
-                    temperature,
-                    2
-                )
+                "temperature_c":
+                    round(
+                        temperature,
+                        2
+                    )
+
             },
 
 
-            # =============================================
+            # =================================================
             # CURRENT WEATHER
-            # =============================================
+            # =================================================
 
             "current_weather": {
 
-                "temperature_c": round(
-                    current_weather["temperature"],
-                    2
-                ),
+                "temperature_c":
+                    round(
+                        current_weather[
+                            "temperature"
+                        ],
+                        2
+                    ),
 
-                "rainfall_mm_1h": round(
-                    current_weather["rainfall_1h"],
-                    2
-                ),
+                "rainfall_mm_1h":
+                    round(
+                        current_weather[
+                            "rainfall_1h"
+                        ],
+                        2
+                    ),
 
                 "description":
-                    current_weather["description"]
+                    current_weather[
+                        "description"
+                    ]
+
             },
 
 
-            # =============================================
+            # =================================================
             # LOCATION
-            # =============================================
+            # =================================================
 
             "location": {
 
@@ -738,12 +899,14 @@ def predict(
 
                 "longitude":
                     location["longitude"]
+
             }
+
         }
 
 
     # =====================================================
-    # ERRORS
+    # ERROR HANDLING
     # =====================================================
 
     except requests.exceptions.Timeout:
@@ -787,7 +950,8 @@ def root():
 
     return {
 
-        "status": "running",
+        "status":
+            "running",
 
         "message":
             "Smart Crop Yield Prediction API",
@@ -800,4 +964,5 @@ def root():
 
         "climate":
             "Historical district climate lookup"
+
     }
