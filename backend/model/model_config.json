@@ -1,0 +1,21 @@
+{
+    "features": [
+        "State",
+        "District",
+        "Crop",
+        "Season",
+        "Crop_Year",
+        "Area",
+        "Rainfall",
+        "Temperature"
+    ],
+    "categorical_features": [
+        "State",
+        "District",
+        "Crop",
+        "Season"
+    ],
+    "target": "Yield",
+    "target_transform": "log1p",
+    "prediction_transform": "expm1"
+}
