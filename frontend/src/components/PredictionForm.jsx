@@ -251,8 +251,7 @@ function PredictionForm({
               </div>
 
               <small>
-                Use the same area unit as the
-                training dataset.
+                Cultivated area in hectares (ha)
               </small>
 
             </div>

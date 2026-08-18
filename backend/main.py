@@ -805,7 +805,7 @@ def predict(
                 ),
 
             "unit":
-                "dataset yield units",
+                "tonnes/hectare (t/ha)",
 
 
             # =================================================

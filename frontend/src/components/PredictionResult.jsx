@@ -45,7 +45,7 @@ function PredictionResult({
         <div className="yield-unit">
 
           {result?.unit ||
-            "dataset yield units"}
+            "tonnes/hectare (t/ha)"}
 
         </div>
 
