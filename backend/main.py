@@ -2,9 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from pydantic import BaseModel, Field
-
 from catboost import CatBoostRegressor
-
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -18,42 +16,33 @@ import os
 # ENVIRONMENT
 # =========================================================
 
-# Project root:
+# Project structure:
+#
 # smart-crop-ai/
 # ├── .env
 # ├── backend/
-# │   └── main.py
+# │   ├── main.py
+# │   ├── model/
+# │   └── data/
 # └── frontend/
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load root .env
+# Load .env from project root
 load_dotenv(BASE_DIR / ".env")
 
 
-# OpenWeather API key
 OPENWEATHER_API_KEY = os.getenv(
     "OPENWEATHER_API_KEY"
 )
 
-
-# Frontend URL
-#
-# Local development:
-# http://localhost:5173
-#
-# Production:
-# https://your-app.vercel.app
-#
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "http://localhost:5173"
 )
 
 
-# Make sure OpenWeather key exists
 if not OPENWEATHER_API_KEY:
-
     raise RuntimeError(
         "OPENWEATHER_API_KEY is not configured."
     )
@@ -65,7 +54,7 @@ if not OPENWEATHER_API_KEY:
 
 app = FastAPI(
     title="Smart Crop Yield Prediction API",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 
@@ -73,23 +62,25 @@ app = FastAPI(
 # CORS
 # =========================================================
 
+allowed_origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+]
+
+if FRONTEND_URL:
+    allowed_origins.append(
+        FRONTEND_URL.rstrip("/")
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
 
-    allow_origins=[
-        # Local Vite development
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-
-        # Localhost IP
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:5175",
-
-        # Production frontend
-        FRONTEND_URL,
-    ],
+    allow_origins=allowed_origins,
 
     allow_credentials=True,
 
@@ -100,30 +91,41 @@ app.add_middleware(
 
 
 # =========================================================
+# HELPER FUNCTION
+# =========================================================
+
+def normalize_text(value: str) -> str:
+    """
+    Normalize text for case-insensitive matching.
+    """
+
+    return str(value).strip().upper()
+
+
+# =========================================================
 # LOAD CATBOOST MODEL
 # =========================================================
 
-MODEL_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "model",
-    "crop_yield_catboost.cbm"
+MODEL_PATH = (
+    Path(__file__).resolve().parent
+    / "model"
+    / "crop_yield_catboost.cbm"
 )
 
 
-# Check model
-if not os.path.exists(MODEL_PATH):
+if not MODEL_PATH.exists():
 
     raise RuntimeError(
         f"Model not found: {MODEL_PATH}"
     )
 
 
-# Load model
 model = CatBoostRegressor()
 
 model.load_model(
-    MODEL_PATH
+    str(MODEL_PATH)
 )
+
 
 print(
     "CatBoost model loaded successfully."
@@ -134,41 +136,41 @@ print(
 # LOAD CLIMATE LOOKUP
 # =========================================================
 
-CLIMATE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "data",
-    "climate_lookup.csv"
+CLIMATE_PATH = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "climate_lookup.csv"
 )
 
 
-# Check climate file
-if not os.path.exists(CLIMATE_PATH):
+if not CLIMATE_PATH.exists():
 
     raise RuntimeError(
         f"Climate lookup not found: {CLIMATE_PATH}"
     )
 
 
-# Load climate lookup
 climate_lookup = pd.read_csv(
     CLIMATE_PATH
 )
 
 
-# Required columns
 required_climate_columns = [
     "State",
     "District",
     "Rainfall",
-    "Temperature"
+    "Temperature",
 ]
 
 
-# Check columns
 missing_columns = [
+
     column
+
     for column in required_climate_columns
+
     if column not in climate_lookup.columns
+
 ]
 
 
@@ -180,6 +182,24 @@ if missing_columns:
     )
 
 
+# Create normalized columns
+
+climate_lookup["_state_key"] = (
+    climate_lookup["State"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+
+climate_lookup["_district_key"] = (
+    climate_lookup["District"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+
 print(
     "Climate lookup loaded:",
     climate_lookup.shape
@@ -187,7 +207,133 @@ print(
 
 
 # =========================================================
-# REQUEST SCHEMA
+# LOAD HISTORICAL CROP SUPPORT DATA
+# =========================================================
+
+HISTORICAL_DATA_PATH = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "historical_crop_data.csv"
+)
+
+
+historical_crop_data = None
+
+
+if HISTORICAL_DATA_PATH.exists():
+
+    try:
+
+        historical_crop_data = pd.read_csv(
+            HISTORICAL_DATA_PATH
+        )
+
+
+        required_historical_columns = [
+            "State",
+            "District",
+            "Crop",
+            "historical_records",
+        ]
+
+
+        missing_historical_columns = [
+
+            column
+
+            for column in required_historical_columns
+
+            if column not in historical_crop_data.columns
+
+        ]
+
+
+        if missing_historical_columns:
+
+            print(
+                "WARNING: Historical crop data "
+                "is missing columns: "
+                + ", ".join(
+                    missing_historical_columns
+                )
+            )
+
+            historical_crop_data = None
+
+
+        else:
+
+            # Normalize State
+
+            historical_crop_data["_state_key"] = (
+                historical_crop_data["State"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+
+            # Normalize District
+
+            historical_crop_data["_district_key"] = (
+                historical_crop_data["District"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+
+            # Normalize Crop
+
+            historical_crop_data["_crop_key"] = (
+                historical_crop_data["Crop"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+
+            # Convert historical records
+
+            historical_crop_data[
+                "historical_records"
+            ] = pd.to_numeric(
+                historical_crop_data[
+                    "historical_records"
+                ],
+                errors="coerce"
+            ).fillna(0)
+
+
+            print(
+                "Historical crop support loaded:",
+                f"{len(historical_crop_data):,}",
+                "combinations"
+            )
+
+
+    except Exception as error:
+
+        print(
+            "WARNING: Could not load "
+            "historical_crop_data.csv:"
+        )
+
+        print(error)
+
+        historical_crop_data = None
+
+
+else:
+
+    print(
+        "WARNING: historical_crop_data.csv "
+        "not found."
+    )
+
+
+# =========================================================
+# REQUEST MODEL
 # =========================================================
 
 class PredictionRequest(BaseModel):
@@ -225,51 +371,520 @@ class PredictionRequest(BaseModel):
 
 
 # =========================================================
-# CLIMATE DATA
+# HISTORICAL SUPPORT / SUITABILITY
+# =========================================================
+
+def check_crop_location_support(
+    crop: str,
+    state: str,
+    district: str,
+):
+
+    # -----------------------------------------------------
+    # Historical file unavailable
+    # -----------------------------------------------------
+
+    if historical_crop_data is None:
+
+        return {
+
+            "level": "unknown",
+
+            "label":
+                "Historical support unavailable",
+
+            "reason": (
+                "The prediction model generated an "
+                "estimate, but historical crop-location "
+                "support data is unavailable."
+            ),
+
+            "historical_records": None,
+
+            "data_source": None,
+
+        }
+
+
+    crop_key = normalize_text(crop)
+
+    state_key = normalize_text(state)
+
+    district_key = normalize_text(district)
+
+
+    # -----------------------------------------------------
+    # Exact match
+    # State + District + Crop
+    # -----------------------------------------------------
+
+    exact_match = historical_crop_data[
+
+        (
+            historical_crop_data["_state_key"]
+            == state_key
+        )
+
+        &
+
+        (
+            historical_crop_data["_district_key"]
+            == district_key
+        )
+
+        &
+
+        (
+            historical_crop_data["_crop_key"]
+            == crop_key
+        )
+
+    ]
+
+
+    if not exact_match.empty:
+
+        records = int(
+            exact_match[
+                "historical_records"
+            ].iloc[0]
+        )
+
+
+        # Strong support
+
+        if records >= 10:
+
+            return {
+
+                "level": "high",
+
+                "label":
+                    "Strong historical support",
+
+                "reason": (
+                    f"{records} historical records were "
+                    f"found for {crop} in "
+                    f"{district}, {state}."
+                ),
+
+                "historical_records":
+                    records,
+
+                "data_source":
+                    "Historical agricultural dataset",
+
+            }
+
+
+        # Moderate support
+
+        if records >= 3:
+
+            return {
+
+                "level": "medium",
+
+                "label":
+                    "Moderate historical support",
+
+                "reason": (
+                    f"{records} historical records were "
+                    f"found for {crop} in "
+                    f"{district}, {state}."
+                ),
+
+                "historical_records":
+                    records,
+
+                "data_source":
+                    "Historical agricultural dataset",
+
+            }
+
+
+        # Very limited support
+
+        return {
+
+            "level": "low",
+
+            "label":
+                "Very limited historical support",
+
+            "reason": (
+                f"Only {records} historical record(s) "
+                f"were found for {crop} in "
+                f"{district}, {state}."
+            ),
+
+            "historical_records":
+                records,
+
+            "data_source":
+                "Historical agricultural dataset",
+
+        }
+
+
+    # -----------------------------------------------------
+    # Crop exists in same State
+    # but not in selected District
+    # -----------------------------------------------------
+
+    state_match = historical_crop_data[
+
+        (
+            historical_crop_data["_state_key"]
+            == state_key
+        )
+
+        &
+
+        (
+            historical_crop_data["_crop_key"]
+            == crop_key
+        )
+
+    ]
+
+
+    if not state_match.empty:
+
+        total_records = int(
+            state_match[
+                "historical_records"
+            ].sum()
+        )
+
+
+        return {
+
+            "level": "medium",
+
+            "label":
+                "State-level historical support",
+
+            "reason": (
+                f"Historical records exist for "
+                f"{crop} in {state}, but no records "
+                f"were found specifically for "
+                f"{district}."
+            ),
+
+            "historical_records":
+                total_records,
+
+            "data_source":
+                "Historical agricultural dataset",
+
+        }
+
+
+    # -----------------------------------------------------
+    # Crop exists elsewhere in India
+    # -----------------------------------------------------
+
+    crop_match = historical_crop_data[
+
+        historical_crop_data["_crop_key"]
+        == crop_key
+
+    ]
+
+
+    if not crop_match.empty:
+
+        total_records = int(
+            crop_match[
+                "historical_records"
+            ].sum()
+        )
+
+
+        return {
+
+            "level": "low",
+
+            "label":
+                "Low historical support",
+
+            "reason": (
+                f"{crop} exists in the historical "
+                f"dataset, but no records were found "
+                f"for {state}."
+            ),
+
+            "historical_records":
+                total_records,
+
+            "data_source":
+                "Historical agricultural dataset",
+
+        }
+
+
+    # -----------------------------------------------------
+    # Crop completely absent
+    # -----------------------------------------------------
+
+    return {
+
+        "level": "low",
+
+        "label":
+            "No historical support",
+
+        "reason": (
+            f"No historical records were found "
+            f"for {crop}."
+        ),
+
+        "historical_records": 0,
+
+        "data_source":
+            "Historical agricultural dataset",
+
+    }
+
+
+# =========================================================
+# PREDICTION CONFIDENCE
+# =========================================================
+
+def calculate_confidence(suitability: dict):
+
+    """
+    Calculate a data-support confidence score.
+
+    IMPORTANT:
+    This is not the mathematical probability that the
+    prediction is correct.
+
+    It represents how strongly the requested crop and
+    location are supported by historical data.
+    """
+
+    level = (
+        suitability.get(
+            "level",
+            "unknown"
+        )
+        .strip()
+        .lower()
+    )
+
+
+    records = suitability.get(
+        "historical_records",
+        0
+    )
+
+
+    if records is None:
+
+        records = 0
+
+
+    try:
+
+        records = int(records)
+
+    except (
+        ValueError,
+        TypeError,
+    ):
+
+        records = 0
+
+
+    # -----------------------------------------------------
+    # HIGH CONFIDENCE
+    # -----------------------------------------------------
+
+    if level == "high":
+
+        if records >= 50:
+
+            score = 95
+
+        elif records >= 25:
+
+            score = 90
+
+        elif records >= 10:
+
+            score = 85
+
+        else:
+
+            score = 80
+
+
+        return {
+
+            "score": score,
+
+            "label":
+                "High Confidence",
+
+            "level":
+                "high",
+
+            "reason": (
+                f"The selected crop and location have "
+                f"{records} direct historical record(s). "
+                f"The prediction has strong historical "
+                f"data support."
+            ),
+
+        }
+
+
+    # -----------------------------------------------------
+    # MEDIUM CONFIDENCE
+    # -----------------------------------------------------
+
+    if level == "medium":
+
+        if records >= 50:
+
+            score = 75
+
+        elif records >= 20:
+
+            score = 70
+
+        elif records >= 3:
+
+            score = 65
+
+        else:
+
+            score = 60
+
+
+        return {
+
+            "score": score,
+
+            "label":
+                "Moderate Confidence",
+
+            "level":
+                "medium",
+
+            "reason": (
+                f"The prediction is supported by "
+                f"{records} related historical record(s), "
+                f"but direct crop-location coverage is "
+                f"limited."
+            ),
+
+        }
+
+
+    # -----------------------------------------------------
+    # LOW CONFIDENCE
+    # -----------------------------------------------------
+
+    if level == "low":
+
+        if records >= 100:
+
+            score = 50
+
+        elif records >= 20:
+
+            score = 45
+
+        elif records > 0:
+
+            score = 35
+
+        else:
+
+            score = 25
+
+
+        return {
+
+            "score": score,
+
+            "label":
+                "Low Confidence",
+
+            "level":
+                "low",
+
+            "reason": (
+                "Historical data support for this exact "
+                "crop and location is limited. The model "
+                "can generate an estimate, but it should "
+                "be interpreted cautiously."
+            ),
+
+        }
+
+
+    # -----------------------------------------------------
+    # UNKNOWN
+    # -----------------------------------------------------
+
+    return {
+
+        "score": 20,
+
+        "label":
+            "Very Low Confidence",
+
+        "level":
+            "unknown",
+
+        "reason": (
+            "Historical crop-location support data is "
+            "unavailable, so the prediction cannot be "
+            "validated against known historical records."
+        ),
+
+    }
+
+
+# =========================================================
+# GET CLIMATE DATA
 # =========================================================
 
 def get_climate_data(
     state: str,
-    district: str
+    district: str,
 ):
 
-    # Clean state
-    state_clean = (
+    state_key = normalize_text(
         state
-        .strip()
-        .upper()
     )
 
-
-    # Clean district
-    district_clean = (
+    district_key = normalize_text(
         district
-        .strip()
-        .upper()
     )
 
 
-    # Search lookup
     result = climate_lookup[
+
         (
-            climate_lookup["State"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            == state_clean
+            climate_lookup["_state_key"]
+            == state_key
         )
+
         &
+
         (
-            climate_lookup["District"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            == district_clean
+            climate_lookup["_district_key"]
+            == district_key
         )
+
     ]
 
 
-    # No climate data
     if result.empty:
 
         raise ValueError(
@@ -278,19 +893,20 @@ def get_climate_data(
         )
 
 
-    # First matching row
     row = result.iloc[0]
 
 
     return {
 
-        "rainfall": float(
-            row["Rainfall"]
-        ),
+        "rainfall":
+            float(
+                row["Rainfall"]
+            ),
 
-        "temperature": float(
-            row["Temperature"]
-        )
+        "temperature":
+            float(
+                row["Temperature"]
+            ),
 
     }
 
@@ -301,7 +917,7 @@ def get_climate_data(
 
 def get_coordinates(
     district: str,
-    state: str
+    state: str,
 ):
 
     url = (
@@ -319,7 +935,7 @@ def get_coordinates(
             5,
 
         "appid":
-            OPENWEATHER_API_KEY
+            OPENWEATHER_API_KEY,
 
     }
 
@@ -327,16 +943,11 @@ def get_coordinates(
     response = requests.get(
         url,
         params=params,
-        timeout=10
+        timeout=15
     )
 
 
-    if response.status_code != 200:
-
-        raise ValueError(
-            "OpenWeather geocoding failed: "
-            f"{response.status_code}"
-        )
+    response.raise_for_status()
 
 
     locations = response.json()
@@ -350,71 +961,43 @@ def get_coordinates(
         )
 
 
-    # =====================================================
-    # Prefer Indian result
-    # =====================================================
-
-    for location in locations:
-
-        if location.get("country") == "IN":
-
-            return {
-
-                "latitude": float(
-                    location["lat"]
-                ),
-
-                "longitude": float(
-                    location["lon"]
-                ),
-
-                "country": "IN",
-
-                "name": location.get(
-                    "name",
-                    district
-                )
-
-            }
-
-
-    # =====================================================
-    # Fallback
-    # =====================================================
-
     location = locations[0]
 
 
     return {
 
-        "latitude": float(
-            location["lat"]
-        ),
+        "name":
+            location.get(
+                "name",
+                district
+            ),
 
-        "longitude": float(
-            location["lon"]
-        ),
+        "latitude":
+            float(
+                location["lat"]
+            ),
 
-        "country": location.get(
-            "country",
-            "IN"
-        ),
+        "longitude":
+            float(
+                location["lon"]
+            ),
 
-        "name": location.get(
-            "name",
-            district
-        )
+        "country":
+            location.get(
+                "country",
+                "IN"
+            ),
 
     }
 
 
 # =========================================================
-# OPENWEATHER CURRENT WEATHER
+# CURRENT WEATHER
 # =========================================================
 
 def get_current_weather(
     latitude: float,
-    longitude: float
+    longitude: float,
 ):
 
     url = (
@@ -435,7 +1018,7 @@ def get_current_weather(
             OPENWEATHER_API_KEY,
 
         "units":
-            "metric"
+            "metric",
 
     }
 
@@ -443,82 +1026,70 @@ def get_current_weather(
     response = requests.get(
         url,
         params=params,
-        timeout=10
+        timeout=15
     )
 
 
-    if response.status_code != 200:
-
-        raise ValueError(
-            "OpenWeather weather request failed: "
-            f"{response.status_code}"
-        )
+    response.raise_for_status()
 
 
     weather = response.json()
 
 
-    # =====================================================
-    # Temperature
-    # =====================================================
-
-    temperature = (
-        weather
-        .get("main", {})
-        .get("temp")
+    rainfall_1h = weather.get(
+        "rain",
+        {}
+    ).get(
+        "1h",
+        0
     )
 
 
-    if temperature is None:
-
-        raise ValueError(
-            "Temperature unavailable from OpenWeather."
-        )
+    description = "Unknown"
 
 
-    # =====================================================
-    # Rainfall
-    # =====================================================
+    if weather.get("weather"):
 
-    rainfall = (
-        weather
-        .get("rain", {})
-        .get("1h", 0.0)
-    )
-
-
-    # =====================================================
-    # Description
-    # =====================================================
-
-    description = ""
-
-    weather_list = weather.get(
-        "weather",
-        []
-    )
-
-
-    if weather_list:
-
-        description = weather_list[0].get(
+        description = weather[
+            "weather"
+        ][0].get(
             "description",
-            ""
+            "Unknown"
         )
 
 
     return {
 
-        "temperature": float(
-            temperature
-        ),
+        "temperature":
+            float(
+                weather["main"]["temp"]
+            ),
 
-        "rainfall_1h": float(
-            rainfall
-        ),
+        "rainfall_1h":
+            float(
+                rainfall_1h
+            ),
 
         "description":
-            description
+            description,
+
+    }
+
+
+# =========================================================
+# HEALTH CHECK
+# =========================================================
+
+@app.get("/")
+def home():
+
+    return {
+
+        "message":
+            "Smart Crop Yield Prediction API is running.",
+
+        "historical_support_loaded":
+            historical_crop_data is not None,
 
     }
 
@@ -530,156 +1101,96 @@ def get_current_weather(
 @app.get("/options")
 def get_options():
 
-    try:
+    states = sorted(
 
-        # =================================================
-        # STATES
-        # =================================================
+        climate_lookup["State"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
 
-        states = sorted(
-            climate_lookup["State"]
+    )
+
+
+    districts = {}
+
+
+    for state in states:
+
+        state_key = normalize_text(
+            state
+        )
+
+
+        state_districts = climate_lookup[
+
+            climate_lookup["_state_key"]
+            == state_key
+
+        ]["District"]
+
+
+        districts[state] = sorted(
+
+            state_districts
             .dropna()
             .astype(str)
+            .str.strip()
             .unique()
             .tolist()
+
         )
 
 
-        # =================================================
-        # DISTRICTS BY STATE
-        # =================================================
+    crops = sorted(
 
-        districts = {}
+        historical_crop_data["Crop"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
 
-
-        for state in states:
-
-            state_data = climate_lookup[
-                climate_lookup["State"]
-                .astype(str)
-                .str.upper()
-                == state.upper()
-            ]
+    ) if historical_crop_data is not None else []
 
 
-            districts[state] = sorted(
-                state_data["District"]
-                .dropna()
-                .astype(str)
-                .unique()
-                .tolist()
-            )
+    seasons = [
+
+        "Autumn",
+
+        "Kharif",
+
+        "Rabi",
+
+        "Summer",
+
+        "Whole Year",
+
+        "Winter",
+
+    ]
 
 
-        # =================================================
-        # CROPS
-        # =================================================
+    return {
 
-        crops = sorted([
+        "states":
+            states,
 
-            "Arecanut",
-            "Arhar/Tur",
-            "Bajra",
-            "Banana",
-            "Barley",
-            "Black pepper",
-            "Cardamom",
-            "Cashewnut",
-            "Castor seed",
-            "Coconut",
-            "Coriander",
-            "Cotton(lint)",
-            "Cowpea(Lobia)",
-            "Dry chillies",
-            "Garlic",
-            "Ginger",
-            "Gram",
-            "Groundnut",
-            "Jowar",
-            "Jute",
-            "Khesari",
-            "Linseed",
-            "Maize",
-            "Masoor",
-            "Mesta",
-            "Moong(Green Gram)",
-            "Moth",
-            "Niger seed",
-            "Oilseeds total",
-            "Onion",
-            "Other Cereals",
-            "Other Kharif Pulses",
-            "Other Rabi Pulses",
-            "Other Summer Pulses",
-            "other oilseeds",
-            "Peas & beans (Pulses)",
-            "Potato",
-            "Ragi",
-            "Rapeseed &Mustard",
-            "Rice",
-            "Safflower",
-            "Sannhamp",
-            "Sesamum",
-            "Small millets",
-            "Soyabean",
-            "Sugarcane",
-            "Sunflower",
-            "Sweet potato",
-            "Tapioca",
-            "Tobacco",
-            "Urad",
-            "Wheat",
-            "other misc. pulses"
+        "districts":
+            districts,
 
-        ])
+        "crops":
+            crops,
 
+        "seasons":
+            seasons,
 
-        # =================================================
-        # SEASONS
-        # =================================================
-
-        seasons = [
-
-            "Autumn",
-            "Kharif",
-            "Rabi",
-            "Summer",
-            "Whole Year",
-            "Winter"
-
-        ]
-
-
-        return {
-
-            "success":
-                True,
-
-            "states":
-                states,
-
-            "districts":
-                districts,
-
-            "crops":
-                crops,
-
-            "seasons":
-                seasons
-
-        }
-
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+    }
 
 
 # =========================================================
-# PREDICTION
+# PREDICT
 # =========================================================
 
 @app.post("/predict")
@@ -689,9 +1200,9 @@ def predict(
 
     try:
 
-        # =================================================
+        # =============================================
         # 1. HISTORICAL CLIMATE
-        # =================================================
+        # =============================================
 
         climate = get_climate_data(
             data.State,
@@ -699,14 +1210,45 @@ def predict(
         )
 
 
-        rainfall = climate["rainfall"]
+        rainfall = climate[
+            "rainfall"
+        ]
 
-        temperature = climate["temperature"]
+
+        temperature = climate[
+            "temperature"
+        ]
 
 
-        # =================================================
-        # 2. LOCATION
-        # =================================================
+        # =============================================
+        # 2. HISTORICAL SUPPORT
+        # =============================================
+
+        suitability = (
+            check_crop_location_support(
+
+                crop=data.Crop,
+
+                state=data.State,
+
+                district=data.District,
+
+            )
+        )
+
+
+        # =============================================
+        # 3. CONFIDENCE
+        # =============================================
+
+        confidence = calculate_confidence(
+            suitability
+        )
+
+
+        # =============================================
+        # 4. LOCATION
+        # =============================================
 
         location = get_coordinates(
             data.District,
@@ -714,21 +1256,27 @@ def predict(
         )
 
 
-        # =================================================
-        # 3. CURRENT WEATHER
-        # =================================================
+        # =============================================
+        # 5. CURRENT WEATHER
+        # =============================================
 
-        current_weather = get_current_weather(
-            location["latitude"],
-            location["longitude"]
+        current_weather = (
+            get_current_weather(
+
+                location["latitude"],
+
+                location["longitude"],
+
+            )
         )
 
 
-        # =================================================
-        # 4. MODEL INPUT
-        # =================================================
+        # =============================================
+        # 6. MODEL INPUT
+        # =============================================
 
         input_data = pd.DataFrame([
+
             {
 
                 "Crop":
@@ -753,40 +1301,40 @@ def predict(
                     rainfall,
 
                 "Temperature":
-                    temperature
+                    temperature,
 
             }
+
         ])
 
 
-        # =================================================
-        # 5. PREDICT LOG YIELD
-        # =================================================
+        # =============================================
+        # 7. MODEL PREDICTION
+        # =============================================
 
         prediction_log = model.predict(
             input_data
         )[0]
 
 
-        # =================================================
-        # 6. CONVERT BACK TO ACTUAL YIELD
-        # =================================================
+        # =============================================
+        # 8. CONVERT LOG TARGET
+        # =============================================
 
         prediction = np.expm1(
             prediction_log
         )
 
 
-        # Prevent negative prediction
         prediction = max(
             0,
-            prediction
+            float(prediction)
         )
 
 
-        # =================================================
-        # 7. RESPONSE
-        # =================================================
+        # =============================================
+        # 9. RESPONSE
+        # =============================================
 
         return {
 
@@ -794,29 +1342,24 @@ def predict(
                 True,
 
 
-            # =================================================
-            # PREDICTION
-            # =================================================
-
             "predicted_yield":
                 round(
-                    float(prediction),
+                    prediction,
                     2
                 ),
 
+
             "unit":
-                "tonnes/hectare (t/ha)",
+                "Yield / hectare",
 
-
-            # =================================================
-            # USER INPUT INFORMATION
-            # =================================================
 
             "crop":
                 data.Crop,
 
+
             "season":
                 data.Season,
+
 
             "area":
                 round(
@@ -824,13 +1367,30 @@ def predict(
                     2
                 ),
 
+
             "prediction_year":
                 data.Crop_Year,
 
 
-            # =================================================
+            # =========================================
+            # SUITABILITY
+            # =========================================
+
+            "suitability":
+                suitability,
+
+
+            # =========================================
+            # CONFIDENCE
+            # =========================================
+
+            "confidence":
+                confidence,
+
+
+            # =========================================
             # CLIMATE USED BY MODEL
-            # =================================================
+            # =========================================
 
             "climate_used_for_prediction": {
 
@@ -844,14 +1404,14 @@ def predict(
                     round(
                         temperature,
                         2
-                    )
+                    ),
 
             },
 
 
-            # =================================================
+            # =========================================
             # CURRENT WEATHER
-            # =================================================
+            # =========================================
 
             "current_weather": {
 
@@ -874,95 +1434,86 @@ def predict(
                 "description":
                     current_weather[
                         "description"
-                    ]
+                    ],
 
             },
 
 
-            # =================================================
+            # =========================================
             # LOCATION
-            # =================================================
+            # =========================================
 
             "location": {
 
                 "district":
-                    location["name"],
+                    location[
+                        "name"
+                    ],
 
                 "state":
                     data.State,
 
                 "country":
-                    location["country"],
+                    location[
+                        "country"
+                    ],
 
                 "latitude":
-                    location["latitude"],
+                    location[
+                        "latitude"
+                    ],
 
                 "longitude":
-                    location["longitude"]
+                    location[
+                        "longitude"
+                    ],
 
-            }
+            },
 
         }
 
 
-    # =====================================================
-    # ERROR HANDLING
-    # =====================================================
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )
+
 
     except requests.exceptions.Timeout:
 
         raise HTTPException(
             status_code=504,
-            detail="OpenWeather request timed out."
+            detail=(
+                "OpenWeather request timed out."
+            )
         )
 
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
 
         raise HTTPException(
             status_code=502,
-            detail=f"OpenWeather error: {str(e)}"
+            detail=(
+                "Could not retrieve weather "
+                "or location data."
+            )
         )
 
 
-    except ValueError as e:
+    except Exception as error:
 
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
+        print(
+            "Prediction error:",
+            error
         )
 
-
-    except Exception as e:
 
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail=(
+                "Prediction failed. "
+                "Please try again."
+            )
         )
-
-
-# =========================================================
-# HEALTH CHECK
-# =========================================================
-
-@app.get("/")
-def root():
-
-    return {
-
-        "status":
-            "running",
-
-        "message":
-            "Smart Crop Yield Prediction API",
-
-        "model":
-            "CatBoost",
-
-        "weather":
-            "OpenWeather",
-
-        "climate":
-            "Historical district climate lookup"
-
-    }

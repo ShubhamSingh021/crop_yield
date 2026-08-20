@@ -2,32 +2,114 @@ function PredictionResult({
   result,
   onPredictAnother,
 }) {
+  const climate = result?.climate_used_for_prediction;
+  const weather = result?.current_weather;
+  const location = result?.location;
+  const suitability = result?.suitability;
+  const confidence = result?.confidence;
 
-  const climate =
-    result?.climate_used_for_prediction;
+  // =====================================================
+  // FORMAT NUMBER
+  // =====================================================
 
-  const weather =
-    result?.current_weather;
+  const formatNumber = (value, decimals = 0) => {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return "-";
+    }
 
-  const location =
-    result?.location;
+    const number = Number(value);
 
+    if (Number.isNaN(number)) {
+      return "-";
+    }
+
+    return number.toLocaleString("en-IN", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  };
+
+  // =====================================================
+  // SUITABILITY CONFIGURATION
+  // =====================================================
+
+  const suitabilityLevel =
+    suitability?.level?.toLowerCase() ||
+    "unknown";
+
+  const suitabilityConfig = {
+    high: {
+      icon: "✓",
+      title: "High Historical Support",
+      className: "suitability-high",
+    },
+
+    medium: {
+      icon: "●",
+      title: "Moderate Historical Support",
+      className: "suitability-medium",
+    },
+
+    low: {
+      icon: "⚠",
+      title: "Low Historical Support",
+      className: "suitability-low",
+    },
+
+    unknown: {
+      icon: "?",
+      title: "Historical Support Unavailable",
+      className: "suitability-unknown",
+    },
+  };
+
+  const currentSuitability =
+    suitabilityConfig[suitabilityLevel] ||
+    suitabilityConfig.unknown;
+
+  // =====================================================
+  // CONFIDENCE
+  // =====================================================
+
+  const confidenceValue =
+    confidence?.score !== undefined &&
+    confidence?.score !== null
+      ? Number(confidence.score)
+      : null;
+
+  const confidencePercentage =
+    confidenceValue !== null
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            confidenceValue <= 1
+              ? confidenceValue * 100
+              : confidenceValue
+          )
+        )
+      : null;
+
+  // =====================================================
+  // UI
+  // =====================================================
 
   return (
-
     <section className="prediction-result">
 
-
-      {/* =====================================================
-          PREDICTION RESULT
-      ===================================================== */}
+      {/* ================================================
+          MAIN YIELD RESULT
+      ================================================= */}
 
       <div className="yield-card">
 
         <div className="yield-label">
-          PREDICTION RESULT
+          PREDICTED CROP YIELD
         </div>
-
 
         <div className="yield-main">
 
@@ -36,41 +118,175 @@ function PredictionResult({
           </span>
 
           <span className="yield-value">
-            {result?.predicted_yield ?? "-"}
+            {formatNumber(
+              result?.predicted_yield,
+              2
+            )}
           </span>
 
         </div>
 
-
         <div className="yield-unit">
-
           {result?.unit ||
-            "tonnes/hectare (t/ha)"}
+            "Yield per hectare"}
+        </div>
+
+      </div>
+
+
+      {/* ================================================
+          STATUS
+      ================================================= */}
+
+      <div className="prediction-status">
+        ✓ Prediction Complete
+      </div>
+
+
+      {/* ================================================
+          SUITABILITY
+      ================================================= */}
+
+      <div
+        className={`suitability-card ${currentSuitability.className}`}
+      >
+
+        <div className="suitability-header">
+
+          <div className="suitability-icon">
+            {currentSuitability.icon}
+          </div>
+
+          <div className="suitability-title">
+
+            <span className="suitability-label">
+              PREDICTION RELIABILITY
+            </span>
+
+            <h3>
+              {suitability?.label ||
+                currentSuitability.title}
+            </h3>
+
+          </div>
+
+        </div>
+
+
+        <p className="suitability-reason">
+
+          {suitability?.reason ||
+            "Historical support information is not available for this prediction."}
+
+        </p>
+
+
+        <div className="suitability-details">
+
+          <div className="suitability-detail">
+
+            <span>
+              📊 Historical Records
+            </span>
+
+            <strong>
+              {formatNumber(
+                suitability?.historical_records
+              )}
+            </strong>
+
+          </div>
+
+
+          <div className="suitability-detail">
+
+            <span>
+              🗂 Data Source
+            </span>
+
+            <strong>
+              {suitability?.data_source ||
+                "Not available"}
+            </strong>
+
+          </div>
 
         </div>
 
       </div>
 
 
-      {/* =====================================================
-          STATUS
-      ===================================================== */}
+      {/* ================================================
+          CONFIDENCE
+      ================================================= */}
 
-      <div className="prediction-status">
+      {confidence && (
 
-        ✓ Prediction Complete
+        <div className="confidence-card">
 
-      </div>
+          <div className="confidence-header">
+
+            <div>
+
+              <span className="confidence-label">
+                MODEL CONFIDENCE
+              </span>
+
+              <h3>
+                {confidence?.label ||
+                  "Prediction Confidence"}
+              </h3>
+
+            </div>
+
+            {confidencePercentage !== null && (
+
+              <strong className="confidence-value">
+                {formatNumber(
+                  confidencePercentage,
+                  0
+                )}%
+              </strong>
+
+            )}
+
+          </div>
 
 
-      {/* =====================================================
+          {confidencePercentage !== null && (
+
+            <div className="confidence-bar">
+
+              <div
+                className="confidence-progress"
+                style={{
+                  width: `${confidencePercentage}%`,
+                }}
+              />
+
+            </div>
+
+          )}
+
+
+          {confidence?.reason && (
+
+            <p className="confidence-reason">
+              {confidence.reason}
+            </p>
+
+          )}
+
+        </div>
+
+      )}
+
+
+      {/* ================================================
           BASIC INFORMATION
-      ===================================================== */}
+      ================================================= */}
 
       <div className="prediction-info-grid">
-
-
-        {/* CROP */}
 
         <div className="info-card">
 
@@ -92,8 +308,6 @@ function PredictionResult({
 
         </div>
 
-
-        {/* LOCATION */}
 
         <div className="info-card">
 
@@ -120,8 +334,6 @@ function PredictionResult({
         </div>
 
 
-        {/* PREDICTION YEAR */}
-
         <div className="info-card">
 
           <div className="info-icon">
@@ -142,8 +354,6 @@ function PredictionResult({
 
         </div>
 
-
-        {/* SEASON */}
 
         <div className="info-card">
 
@@ -166,8 +376,6 @@ function PredictionResult({
         </div>
 
 
-        {/* AREA */}
-
         <div className="info-card">
 
           <div className="info-icon">
@@ -181,11 +389,11 @@ function PredictionResult({
             </span>
 
             <strong>
-              {result?.area ?? "-"}
+              {formatNumber(result?.area)}
             </strong>
 
             <small>
-              Dataset area units
+              Hectares
             </small>
 
           </div>
@@ -195,9 +403,9 @@ function PredictionResult({
       </div>
 
 
-      {/* =====================================================
+      {/* ================================================
           CLIMATE
-      ===================================================== */}
+      ================================================= */}
 
       <div className="data-section climate-section">
 
@@ -210,8 +418,8 @@ function PredictionResult({
             </h3>
 
             <p>
-              Historical climate values used by
-              the ML model
+              Climate values used as input
+              for the ML prediction
             </p>
 
           </div>
@@ -220,9 +428,6 @@ function PredictionResult({
 
 
         <div className="data-grid">
-
-
-          {/* RAINFALL */}
 
           <div className="data-card">
 
@@ -244,8 +449,6 @@ function PredictionResult({
 
           </div>
 
-
-          {/* TEMPERATURE */}
 
           <div className="data-card">
 
@@ -272,9 +475,9 @@ function PredictionResult({
       </div>
 
 
-      {/* =====================================================
+      {/* ================================================
           CURRENT WEATHER
-      ===================================================== */}
+      ================================================= */}
 
       <div className="data-section weather-section">
 
@@ -287,7 +490,8 @@ function PredictionResult({
             </h3>
 
             <p>
-              Current conditions from OpenWeather
+              Current weather conditions
+              for the selected location
             </p>
 
           </div>
@@ -296,9 +500,6 @@ function PredictionResult({
 
 
         <div className="weather-grid">
-
-
-          {/* TEMPERATURE */}
 
           <div className="data-card">
 
@@ -321,8 +522,6 @@ function PredictionResult({
           </div>
 
 
-          {/* RAINFALL */}
-
           <div className="data-card">
 
             <div className="data-icon">
@@ -343,8 +542,6 @@ function PredictionResult({
 
           </div>
 
-
-          {/* CONDITIONS */}
 
           <div className="data-card">
 
@@ -371,9 +568,9 @@ function PredictionResult({
       </div>
 
 
-      {/* =====================================================
-          PREDICT ANOTHER CROP
-      ===================================================== */}
+      {/* ================================================
+          PREDICT AGAIN
+      ================================================= */}
 
       <div className="another-prediction">
 
@@ -382,23 +579,11 @@ function PredictionResult({
           className="another-prediction-btn"
           onClick={() => {
 
-            console.log(
-              "Predict Another Crop clicked"
-            );
-
             if (
               typeof onPredictAnother ===
               "function"
             ) {
-
               onPredictAnother();
-
-            } else {
-
-              console.error(
-                "onPredictAnother is not a function"
-              );
-
             }
 
           }}
@@ -410,11 +595,8 @@ function PredictionResult({
 
       </div>
 
-
     </section>
-
   );
 }
-
 
 export default PredictionResult;
