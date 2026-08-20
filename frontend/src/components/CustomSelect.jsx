@@ -1,93 +1,119 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 function CustomSelect({
   name,
   value,
   onChange,
   options = [],
-  placeholder = "Select...",
+  placeholder = "Select an option",
   disabled = false,
 }) {
-
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const selectRef = useRef(null);
 
+
+  // ============================================
+  // FORMAT ONLY FOR DISPLAY
+  // JAIPUR -> Jaipur
+  // SOUTH ANDAMAN -> South Andaman
+  // WEST GODAVARI -> West Godavari
+  // ============================================
+
+  const formatDistrictName = (text) => {
+    if (!text) return "";
+
+    return text
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+
+  // ============================================
+  // CLOSE DROPDOWN WHEN CLICKING OUTSIDE
+  // ============================================
+
   useEffect(() => {
-
-    const handleOutsideClick = (event) => {
-
+    const handleClickOutside = (event) => {
       if (
         selectRef.current &&
         !selectRef.current.contains(event.target)
       ) {
-        setOpen(false);
+        setIsOpen(false);
       }
-
     };
 
     document.addEventListener(
       "mousedown",
-      handleOutsideClick
+      handleClickOutside
     );
 
     return () => {
       document.removeEventListener(
         "mousedown",
-        handleOutsideClick
+        handleClickOutside
       );
     };
-
   }, []);
 
 
-  const handleSelect = (option) => {
+  // ============================================
+  // HANDLE OPTION CLICK
+  // ============================================
 
+  const handleSelect = (option) => {
     onChange({
       target: {
-        name,
+        name: name,
         value: option,
       },
     });
 
-    setOpen(false);
+    setIsOpen(false);
   };
+
+
+  // ============================================
+  // DISPLAY SELECTED VALUE
+  // ============================================
+
+  const displayValue = value
+    ? formatDistrictName(value)
+    : placeholder;
 
 
   return (
     <div
-      ref={selectRef}
       className={`custom-select ${
-        open ? "custom-select-open" : ""
-      } ${disabled ? "custom-select-disabled" : ""}`}
+        disabled ? "disabled" : ""
+      }`}
+      ref={selectRef}
     >
 
       <button
         type="button"
-        className="custom-select-button"
+        className="custom-select-trigger"
         disabled={disabled}
         onClick={() => {
-
           if (!disabled) {
-            setOpen((previous) => !previous);
+            setIsOpen(!isOpen);
           }
-
         }}
       >
 
         <span
           className={
             value
-              ? "custom-select-value"
-              : "custom-select-placeholder"
+              ? "selected-value"
+              : "placeholder-value"
           }
         >
-          {value || placeholder}
+          {displayValue}
         </span>
 
         <span
-          className={`custom-select-arrow ${
-            open ? "arrow-up" : ""
+          className={`select-arrow ${
+            isOpen ? "open" : ""
           }`}
         >
           ▾
@@ -96,17 +122,11 @@ function CustomSelect({
       </button>
 
 
-      {open && !disabled && (
+      {isOpen && !disabled && (
 
         <div className="custom-select-menu">
 
-          {options.length === 0 ? (
-
-            <div className="custom-select-empty">
-              No options available
-            </div>
-
-          ) : (
+          {options.length > 0 ? (
 
             options.map((option) => (
 
@@ -115,7 +135,7 @@ function CustomSelect({
                 key={option}
                 className={`custom-select-option ${
                   value === option
-                    ? "custom-select-option-active"
+                    ? "selected"
                     : ""
                 }`}
                 onClick={() =>
@@ -123,17 +143,17 @@ function CustomSelect({
                 }
               >
 
-                <span>
-                  {option}
-                </span>
-
-                {value === option && (
-                  <span>✓</span>
-                )}
+                {formatDistrictName(option)}
 
               </button>
 
             ))
+
+          ) : (
+
+            <div className="custom-select-empty">
+              No options available
+            </div>
 
           )}
 
@@ -144,5 +164,6 @@ function CustomSelect({
     </div>
   );
 }
+
 
 export default CustomSelect;

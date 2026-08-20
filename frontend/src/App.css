@@ -2795,3 +2795,156 @@ a {
   }
 
 }
+/* =========================================
+   CUSTOM SELECT
+========================================= */
+
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  width: 100%;
+  min-height: 56px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 18px;
+
+  background: #ffffff;
+  border: 1px solid #d7ddd6;
+  border-radius: 12px;
+
+  color: #26352c;
+  font-size: 15px;
+  font-weight: 500;
+
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  text-align: left;
+}
+
+.custom-select-trigger:hover {
+  border-color: #8ba18f;
+}
+
+.custom-select-trigger:focus {
+  outline: none;
+  border-color: #2f6f44;
+  box-shadow: 0 0 0 3px rgba(47, 111, 68, 0.1);
+}
+
+.custom-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background: #f5f6f5;
+}
+
+
+/* Selected text */
+
+.selected-value {
+  color: #26352c;
+}
+
+
+/* Placeholder */
+
+.placeholder-value {
+  color: #7b8580;
+}
+
+
+/* Arrow */
+
+.select-arrow {
+  font-size: 16px;
+  color: #68736c;
+
+  transition: transform 0.2s ease;
+}
+
+.select-arrow.open {
+  transform: rotate(180deg);
+}
+
+
+/* =========================================
+   DROPDOWN MENU
+========================================= */
+
+.custom-select-menu {
+  position: absolute;
+
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+
+  max-height: 250px;
+  overflow-y: auto;
+
+  background: #ffffff;
+
+  border: 1px solid #d7ddd6;
+  border-radius: 12px;
+
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+
+  z-index: 1000;
+
+  padding: 6px;
+}
+
+
+/* =========================================
+   OPTIONS
+========================================= */
+
+.custom-select-option {
+  width: 100%;
+
+  border: none;
+  background: transparent;
+
+  padding: 12px 14px;
+
+  border-radius: 8px;
+
+  text-align: left;
+
+  color: #26352c;
+  font-size: 15px;
+
+  cursor: pointer;
+
+  transition: background 0.2s ease;
+}
+
+.custom-select-option:hover {
+  background: #eef5ef;
+}
+
+.custom-select-option.selected {
+  background: #e3f0e6;
+  color: #23633a;
+  font-weight: 600;
+}
+
+
+/* =========================================
+   EMPTY STATE
+========================================= */
+
+.custom-select-empty {
+  padding: 14px;
+
+  text-align: center;
+
+  color: #7b8580;
+
+  font-size: 14px;
+}
