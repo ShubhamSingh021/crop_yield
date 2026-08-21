@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+catboost
+pandas
+numpy
+requests
+python-dotenv
